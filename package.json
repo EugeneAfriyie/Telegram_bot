@@ -17,4 +17,6 @@
     "express": "^5.2.1",
     "mongoose": "^9.2.1",
     "node-cron": "^4.2.1",
-    "node-telegram
+    "node-telegram-bot-api": "^0.67.0"
+  }
+}
