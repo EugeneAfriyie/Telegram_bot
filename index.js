@@ -69,17 +69,16 @@ bot.on("callback_query", async (query) => {
             return bot.sendMessage(chatId, "You must subscribe to VIP to use this feature, or your VIP has expired. 🚫");
         }
 
-        try {
-            // 🟢 FIX 1: Use CoinGecko instead of Binance to bypass the Render US server block
-            const response = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
-            const btcPrice = response.data.bitcoin.usd;
+       try {
+            // 🟢 FIX: Swapped to CoinCap API which is much friendlier to Render servers
+            const response = await axios.get("https://api.coincap.io/v2/assets/bitcoin");
+            const btcPrice = parseFloat(response.data.data.priceUsd);
             
-            bot.sendMessage(chatId, `BTC Price: $${btcPrice.toLocaleString()}`);
+            bot.sendMessage(chatId, `BTC Price: $${btcPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
         } catch (err) {
             console.log("Price fetch error:", err.message);
             bot.sendMessage(chatId, "Could not fetch BTC price right now. 😔");
         }
-    }
 
     if (query.data === "vip") {
         const reference = `VIP_${query.from.id}_${Date.now()}`;
