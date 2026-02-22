@@ -48,15 +48,19 @@ bot.onText(/\/start/, (msg) => {
     });
 });
 
+
 // Handle button clicks
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
+
+    // 🟢 FIX 2: Answer instantly to stop the Telegram "query is too old" error
+    bot.answerCallbackQuery(query.id).catch(err => console.log("Callback Answer Error:", err.message));
 
     if (query.data === "btc") {
         const user = await User.findOne({ telegramId: query.from.id });
         const now = new Date();
 
-        // Check if user exists, is VIP, and hasn't expired (Render Free Tier Safe)
+        // Check if user exists, is VIP, and hasn't expired
         if (!user || !user.isVIP || (user.expiryDate && user.expiryDate < now)) {
             // Instantly demote them in DB if they are expired
             if (user && user.isVIP) {
@@ -66,9 +70,13 @@ bot.on("callback_query", async (query) => {
         }
 
         try {
-            const response = await axios.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
-            bot.sendMessage(chatId, `BTC Price: $${Number(response.data.price).toFixed(2)}`);
+            // 🟢 FIX 1: Use CoinGecko instead of Binance to bypass the Render US server block
+            const response = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
+            const btcPrice = response.data.bitcoin.usd;
+            
+            bot.sendMessage(chatId, `BTC Price: $${btcPrice.toLocaleString()}`);
         } catch (err) {
+            console.log("Price fetch error:", err.message);
             bot.sendMessage(chatId, "Could not fetch BTC price right now. 😔");
         }
     }
@@ -82,8 +90,8 @@ bot.on("callback_query", async (query) => {
                 "https://api.paystack.co/transaction/initialize",
                 {
                     email,
-                    amount: 2000 * 100, // $20 in kobo (Assuming NGN, adjust if needed)
-                    callback_url: `${BASE_URL}/paystack/callback`,
+                    amount: 2000 * 100, // Adjust depending on currency
+                    callback_url: `${process.env.BASE_URL}/paystack/callback`,
                     reference
                 },
                 {
@@ -97,13 +105,10 @@ bot.on("callback_query", async (query) => {
             const payLink = payResponse.data.data.authorization_url;
             bot.sendMessage(chatId, `Click here to pay VIP: ${payLink}`);
         } catch (err) {
-            console.log(err.response?.data || err);
+            console.log("Paystack Error:", err.response?.data || err.message);
             bot.sendMessage(chatId, "Failed to create payment link. Try again later.");
         }
     }
-
-    // Always answer the callback query to remove the "loading" state on the button
-    bot.answerCallbackQuery(query.id);
 });
 
 // -------------------
