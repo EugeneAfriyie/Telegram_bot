@@ -9,11 +9,11 @@ const mongoose = require("mongoose");
 const cron = require("node-cron");
 
 // -------------------
-// MongoDB setup
+// MongoDB Setup
 // -------------------
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("MongoDB Connected ✅"))
-    .catch(err => console.log(err));
+    .catch(err => console.log("MongoDB Error:", err));
 
 const User = mongoose.model("User", {
     telegramId: String,
@@ -22,10 +22,20 @@ const User = mongoose.model("User", {
 });
 
 // -------------------
-// Telegram Bot setup
+// Bot & Webhook Configuration
 // -------------------
-const bot = new TelegramBot(process.env.TOKEN, { polling: true });
+const TOKEN = process.env.TOKEN;
+const BASE_URL = process.env.BASE_URL; // e.g., https://telegram-bot-ilpz.onrender.com
 
+// 1. Initialize Bot WITHOUT polling
+const bot = new TelegramBot(TOKEN);
+
+// 2. Tell Telegram where to push messages
+bot.setWebHook(`${BASE_URL}/bot${TOKEN}`);
+
+// -------------------
+// Bot Logic (Commands & Interactions)
+// -------------------
 // Start command with inline buttons
 bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, "Welcome Eugene 🚀 Choose an option:", {
@@ -44,25 +54,36 @@ bot.on("callback_query", async (query) => {
 
     if (query.data === "btc") {
         const user = await User.findOne({ telegramId: query.from.id });
-        if (!user || !user.isVIP) {
-            return bot.sendMessage(chatId, "You must subscribe to VIP to use this feature 🚫");
+        const now = new Date();
+
+        // Check if user exists, is VIP, and hasn't expired (Render Free Tier Safe)
+        if (!user || !user.isVIP || (user.expiryDate && user.expiryDate < now)) {
+            // Instantly demote them in DB if they are expired
+            if (user && user.isVIP) {
+                await User.updateOne({ telegramId: query.from.id }, { isVIP: false });
+            }
+            return bot.sendMessage(chatId, "You must subscribe to VIP to use this feature, or your VIP has expired. 🚫");
         }
 
-        const response = await axios.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
-        bot.sendMessage(chatId, `BTC Price: $${response.data.price}`);
+        try {
+            const response = await axios.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
+            bot.sendMessage(chatId, `BTC Price: $${Number(response.data.price).toFixed(2)}`);
+        } catch (err) {
+            bot.sendMessage(chatId, "Could not fetch BTC price right now. 😔");
+        }
     }
 
     if (query.data === "vip") {
         const reference = `VIP_${query.from.id}_${Date.now()}`;
-        const email = query.from.username ? query.from.username + "@example.com" : "user@example.com";
+        const email = query.from.username ? `${query.from.username}@example.com` : "user@example.com";
 
         try {
             const payResponse = await axios.post(
                 "https://api.paystack.co/transaction/initialize",
                 {
                     email,
-                    amount: 2000 * 100, // $20 in kobo
-                    callback_url: `${process.env.BASE_URL}/paystack/callback`,
+                    amount: 2000 * 100, // $20 in kobo (Assuming NGN, adjust if needed)
+                    callback_url: `${BASE_URL}/paystack/callback`,
                     reference
                 },
                 {
@@ -81,21 +102,29 @@ bot.on("callback_query", async (query) => {
         }
     }
 
+    // Always answer the callback query to remove the "loading" state on the button
     bot.answerCallbackQuery(query.id);
 });
 
 // -------------------
-// Express Webhook for Paystack
+// Express Webhook Server
 // -------------------
 const app = express();
 app.use(bodyParser.json());
 
+// Telegram Webhook Route
+app.post(`/bot${TOKEN}`, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+});
+
+// Paystack Webhook Route
 app.post("/paystack/callback", async (req, res) => {
     const event = req.body;
 
     if (event.event === "charge.success") {
         const ref = event.data.reference;
-        const telegramId = ref.split("_")[1]; // encoded in reference
+        const telegramId = ref.split("_")[1]; // extract from reference
 
         const expiry = new Date();
         expiry.setDate(expiry.getDate() + 30); // 30-day VIP
@@ -106,21 +135,36 @@ app.post("/paystack/callback", async (req, res) => {
             { upsert: true }
         );
 
-        console.log(`VIP activated for ${telegramId}`);
+        console.log(`VIP activated for Telegram ID: ${telegramId}`);
+        
+        // Optional: Send a success message to the user!
+        bot.sendMessage(telegramId, "Payment successful! 🎉 You are now a VIP for 30 days.");
     }
 
     res.sendStatus(200);
 });
 
-app.listen(process.env.PORT || 3000, () => {
-    console.log("Webhook server running...");
+// Health Check Route (Required for Render)
+app.get("/", (req, res) => {
+    res.status(200).send("Bot is Alive and Running on Webhooks! 🚀");
+});
+
+// Start the Express Server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server is running and listening on port ${PORT} ✅`);
 });
 
 // -------------------
-// Cron Job: Remove expired VIPs every hour
+// Cron Job: Remove expired VIPs (Works when awake)
 // -------------------
 cron.schedule("0 * * * *", async () => {
     const now = new Date();
-    await User.updateMany({ expiryDate: { $lt: now } }, { isVIP: false });
-    console.log("Expired VIPs removed");
+    const result = await User.updateMany(
+        { expiryDate: { $lt: now }, isVIP: true }, 
+        { isVIP: false }
+    );
+    if (result.modifiedCount > 0) {
+        console.log(`Expired VIPs removed: ${result.modifiedCount}`);
+    }
 });
