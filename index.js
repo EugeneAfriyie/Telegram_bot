@@ -69,7 +69,7 @@ bot.on("callback_query", async (query) => {
             return bot.sendMessage(chatId, "You must subscribe to VIP to use this feature, or your VIP has expired. 🚫");
         }
 
-       try {
+     try {
             // 🟢 FIX: Swapped to CoinCap API which is much friendlier to Render servers
             const response = await axios.get("https://api.coincap.io/v2/assets/bitcoin");
             const btcPrice = parseFloat(response.data.data.priceUsd);
@@ -79,6 +79,7 @@ bot.on("callback_query", async (query) => {
             console.log("Price fetch error:", err.message);
             bot.sendMessage(chatId, "Could not fetch BTC price right now. 😔");
         }
+    }
 
     if (query.data === "vip") {
         const reference = `VIP_${query.from.id}_${Date.now()}`;
