@@ -96,31 +96,45 @@ bot.on("callback_query", async (query) => {
             );
         }
 
-        if (query.data === "vip") {
+     if (query.data === "vip") {
 
-            const reference = `VIP_${telegramId}_${Date.now()}`;
+    const telegramId = query.from.id.toString();
+    const user = await User.findOne({ telegramId });
+    const now = new Date();
 
-            const payResponse = await axios.post(
-                "https://api.paystack.co/transaction/initialize",
-                {
-                    email: `${telegramId}@vipuser.com`,
-                    amount: 2000 * 100, // $20
-                    callback_url: `${BASE_URL}/payment-success`,
-                    reference
-                },
-                {
-                    headers: {
-                        Authorization: `Bearer ${process.env.PAYSTACK_SECRET}`,
-                        "Content-Type": "application/json"
-                    }
-                }
-            );
+    // ✅ If already VIP and not expired
+    if (user && user.isVIP && user.expiryDate && user.expiryDate > now) {
+        return bot.sendMessage(
+            chatId,
+            `You are already VIP ✅
+Expires on: ${user.expiryDate.toDateString()}`
+        );
+    }
 
-            return bot.sendMessage(
-                chatId,
-                `Pay VIP here 🔥:\n${payResponse.data.data.authorization_url}`
-            );
+    // 🔥 Otherwise generate payment link
+    const reference = `VIP_${telegramId}_${Date.now()}`;
+
+    const payResponse = await axios.post(
+        "https://api.paystack.co/transaction/initialize",
+        {
+            email: `${telegramId}@vipuser.com`,
+            amount: 2000 * 100,
+            callback_url: `${process.env.BASE_URL}/payment-success`,
+            reference
+        },
+        {
+            headers: {
+                Authorization: `Bearer ${process.env.PAYSTACK_SECRET}`,
+                "Content-Type": "application/json"
+            }
         }
+    );
+
+    bot.sendMessage(
+        chatId,
+        `Pay VIP here 🔥:\n${payResponse.data.data.authorization_url}`
+    );
+}
 
     } catch (err) {
         console.log("Callback Error:", err.message);
