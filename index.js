@@ -26,6 +26,33 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", userSchema);
 
+// -------------------
+// BTC Price Cache (Avoid 429 Errors)
+// -------------------
+let cachedBTCPrice = null;
+let lastUpdated = null;
+
+async function updateBTC() {
+    try {
+        const response = await axios.get(
+            "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+        );
+
+        cachedBTCPrice = response.data.bitcoin.usd;
+        lastUpdated = new Date();
+
+        console.log("BTC price updated:", cachedBTCPrice);
+    } catch (err) {
+        console.log("BTC update failed:", err.message);
+    }
+}
+
+// Run immediately when server starts
+updateBTC();
+
+// Update every 10 minutes
+cron.schedule("*/10 * * * *", updateBTC);
+
 // ===============================
 // Bot Setup (Webhook Mode)
 // ===============================
@@ -79,16 +106,14 @@ bot.on("callback_query", async (query) => {
     }
 
     try {
-        const response = await axios.get(
-            "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
-        );
+      if (!cachedBTCPrice) {
+    return bot.sendMessage(chatId, "Price not available yet. Try again in a few seconds.");
+}
 
-        const btcPrice = response.data.bitcoin.usd;
-
-        bot.sendMessage(
-            chatId,
-            `BTC Price: $${btcPrice.toLocaleString()}`
-        );
+bot.sendMessage(
+    chatId,
+    `BTC Price: $${cachedBTCPrice.toLocaleString()} \nLast Updated: ${lastUpdated.toLocaleTimeString()}`
+);
 
     } catch (err) {
         console.log("Price fetch error:", err.message);
