@@ -69,33 +69,32 @@ bot.on("callback_query", async (query) => {
     await bot.answerCallbackQuery(query.id).catch(() => {});
 
     try {
-        if (query.data === "btc") {
+      if (query.data === "btc") {
 
-            const user = await User.findOne({ telegramId });
-            const now = new Date();
+    const user = await User.findOne({ telegramId });
+    const now = new Date();
 
-            if (!user || !user.isVIP || (user.expiryDate && user.expiryDate < now)) {
+    if (!user || !user.isVIP || (user.expiryDate && user.expiryDate < now)) {
+        return bot.sendMessage(chatId, "VIP required or expired 🚫");
+    }
 
-                if (user && user.isVIP) {
-                    user.isVIP = false;
-                    await user.save();
-                }
+    try {
+        const response = await axios.get(
+            "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+        );
 
-                return bot.sendMessage(chatId, "VIP required or expired 🚫");
-            }
+        const btcPrice = response.data.bitcoin.usd;
 
-            const response = await axios.get("https://api.coincap.io/v2/assets/bitcoin");
-            const btcPrice = parseFloat(response.data.data.priceUsd);
+        bot.sendMessage(
+            chatId,
+            `BTC Price: $${btcPrice.toLocaleString()}`
+        );
 
-            return bot.sendMessage(
-                chatId,
-                `BTC Price: $${btcPrice.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                })}`
-            );
-        }
-
+    } catch (err) {
+        console.log("Price fetch error:", err.message);
+        bot.sendMessage(chatId, "Could not fetch BTC price right now.");
+    }
+}
      if (query.data === "vip") {
 
     const telegramId = query.from.id.toString();
